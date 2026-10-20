@@ -1,3 +1,4 @@
+// screens/login_screen.dart
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user.dart';
@@ -5,67 +6,72 @@ import '../database/database.dart';
 import 'tasks_list_screen.dart';
 
 class LoginScreen extends StatefulWidget {
+  const LoginScreen({super.key});
+
   @override
-  _LoginScreenState createState() => _LoginScreenState();
+  State<LoginScreen> createState() => _LoginScreenState();
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final TextEditingController _usernameController = TextEditingController();
-  final TextEditingController _passwordController = TextEditingController();
-  final DatabaseHelper _dbHelper = DatabaseHelper();
+  final _formKey = GlobalKey<FormState>();
+  final _usernameController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final _dbHelper = DatabaseHelper();
   bool _isLogin = true;
   bool _isLoading = false;
+  bool _obscurePassword = true;
 
   Future<void> _authenticate() async {
+    if (!_formKey.currentState!.validate()) return;
     setState(() => _isLoading = true);
-    
+
     final username = _usernameController.text.trim();
     final password = _passwordController.text.trim();
-    
-    if (username.isEmpty || password.isEmpty) {
-      _showError('يرجى ملء جميع الحقول');
-      setState(() => _isLoading = false);
-      return;
-    }
-    
+
     try {
       if (_isLogin) {
         final user = await _dbHelper.getUserByUsername(username);
-        if (user != null && user.password == password) {
+        if (!mounted) return;
+        
+        if (user != null && User.verifyPassword(password, user.password)) {
           await _saveUserSession(user.id);
+          if (!mounted) return;
           Navigator.pushReplacement(
             context,
-            MaterialPageRoute(builder: (context) => TasksListScreen(userId: user.id)),
+            MaterialPageRoute(builder: (_) => TasksListScreen(userId: user.id)),
           );
         } else {
           _showError('اسم المستخدم أو كلمة المرور غير صحيحة');
         }
       } else {
-        // تسجيل جديد
         final existingUser = await _dbHelper.getUserByUsername(username);
+        if (!mounted) return;
+        
         if (existingUser != null) {
           _showError('اسم المستخدم موجود مسبقاً');
         } else {
           final newUser = User(
             id: DateTime.now().millisecondsSinceEpoch.toString(),
             username: username,
-            password: password,
+            password: User.hashPassword(password),
             createdAt: DateTime.now(),
           );
           
           await _dbHelper.insertUser(newUser);
           await _saveUserSession(newUser.id);
+          if (!mounted) return;
           Navigator.pushReplacement(
             context,
-            MaterialPageRoute(builder: (context) => TasksListScreen(userId: newUser.id)),
+            MaterialPageRoute(builder: (_) => TasksListScreen(userId: newUser.id)),
           );
         }
       }
     } catch (e) {
-      _showError('حدث خطأ: $e');
+      if (!mounted) return;
+      _showError('حدث خطأ، حاول مجدداً');
     }
-    
-    setState(() => _isLoading = false);
+
+    if (mounted) setState(() => _isLoading = false);
   }
   
   Future<void> _saveUserSession(String userId) async {
@@ -75,107 +81,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   void _showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.red,
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topRight,
-            end: Alignment.bottomLeft,
-            colors: [Colors.blue.shade700, Colors.purple.shade500],
-          ),
-        ),
-        child: Center(
-          child: SingleChildScrollView(
-            padding: EdgeInsets.all(20),
-            child: Card(
-              elevation: 8,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Padding(
-                padding: EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      _isLogin ? 'تسجيل الدخول' : 'إنشاء حساب',
-                      style: TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.blue.shade800,
-                      ),
-                    ),
-                    SizedBox(height: 30),
-                    TextField(
-                      controller: _usernameController,
-                      decoration: InputDecoration(
-                        labelText: 'اسم المستخدم',
-                        prefixIcon: Icon(Icons.person),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                      ),
-                    ),
-                    SizedBox(height: 20),
-                    TextField(
-                      controller: _passwordController,
-                      obscureText: true,
-                      decoration: InputDecoration(
-                        labelText: 'كلمة المرور',
-                        prefixIcon: Icon(Icons.lock),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                      ),
-                    ),
-                    SizedBox(height: 30),
-                    _isLoading
-                        ? CircularProgressIndicator()
-                        : SizedBox(
-                            width: double.infinity,
-                            child: ElevatedButton(
-                              onPressed: _authenticate,
-                              style: ElevatedButton.styleFrom(
-                                padding: EdgeInsets.symmetric(vertical: 16),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                backgroundColor: Colors.blue.shade800,
-                              ),
-                              child: Text(
-                                _isLogin ? 'تسجيل الدخول' : 'إنشاء حساب',
-                                style: TextStyle(fontSize: 18, color: Colors.white),
-                              ),
-                            ),
-                          ),
-                    SizedBox(height: 20),
-                    TextButton(
-                      onPressed: () {
-                        setState(() => _isLogin = !_isLogin);
-                      },
-                      child: Text(
-                        _isLogin
-                            ? 'ليس لديك حساب؟ إنشاء حساب جديد'
-                            : 'لديك حساب بالفعل؟ تسجيل الدخول',
-                        style: TextStyle(color: Colors.blue.shade800),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
+      SnackBar(content: Text(message), backgroundColor: Theme.of(context).colorScheme.error),
     );
   }
 
@@ -184,5 +90,81 @@ class _LoginScreenState extends State<LoginScreen> {
     _usernameController.dispose();
     _passwordController.dispose();
     super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Scaffold(
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: Form(
+              key: _formKey,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(24),
+                    decoration: BoxDecoration(
+                      color: scheme.primaryContainer,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(Icons.task_alt, size: 64, color: scheme.onPrimaryContainer),
+                  ),
+                  const SizedBox(height: 24),
+                  Text(
+                    _isLogin ? 'مرحبًا بعودتك' : 'إنشاء حساب جديد',
+                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 32),
+                  TextFormField(
+                    controller: _usernameController,
+                    decoration: const InputDecoration(
+                      labelText: 'اسم المستخدم',
+                      prefixIcon: Icon(Icons.person_outline),
+                    ),
+                    validator: (v) => (v == null || v.trim().isEmpty) ? 'يرجى إدخال اسم المستخدم' : null,
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _passwordController,
+                    obscureText: _obscurePassword,
+                    decoration: InputDecoration(
+                      labelText: 'كلمة المرور',
+                      prefixIcon: const Icon(Icons.lock_outline),
+                      suffixIcon: IconButton(
+                        icon: Icon(_obscurePassword ? Icons.visibility : Icons.visibility_off),
+                        onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                      ),
+                    ),
+                    validator: (v) => (v == null || v.isEmpty) ? 'يرجى إدخال كلمة المرور' : null,
+                  ),
+                  const SizedBox(height: 32),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 50,
+                    child: FilledButton(
+                      onPressed: _isLoading ? null : _authenticate,
+                      child: _isLoading 
+                          ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))
+                          : Text(_isLogin ? 'تسجيل الدخول' : 'إنشاء حساب'),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextButton(
+                    onPressed: () {
+                      setState(() => _isLogin = !_isLogin);
+                    },
+                    child: Text(_isLogin ? 'ليس لديك حساب؟ إنشاء حساب' : 'لديك حساب؟ تسجيل الدخول'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }

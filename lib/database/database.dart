@@ -1,3 +1,4 @@
+// database/database.dart
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import '../models/user.dart';
@@ -21,12 +22,16 @@ class DatabaseHelper {
     return await openDatabase(
       path,
       version: 1,
+      onConfigure: _onConfigure,
       onCreate: _onCreate,
     );
   }
 
+  Future<void> _onConfigure(Database db) async {
+    await db.execute('PRAGMA foreign_keys = ON');
+  }
+
   Future<void> _onCreate(Database db, int version) async {
-    // إنشاء جدول المستخدمين
     await db.execute('''
       CREATE TABLE users(
         id TEXT PRIMARY KEY,
@@ -36,7 +41,6 @@ class DatabaseHelper {
       )
     ''');
 
-    // إنشاء جدول المهام
     await db.execute('''
       CREATE TABLE tasks(
         id TEXT PRIMARY KEY,
@@ -52,7 +56,6 @@ class DatabaseHelper {
     ''');
   }
 
-  // عمليات المستخدمين
   Future<int> insertUser(User user) async {
     final db = await database;
     return await db.insert('users', user.toMap());
@@ -60,31 +63,11 @@ class DatabaseHelper {
 
   Future<User?> getUserByUsername(String username) async {
     final db = await database;
-    final List<Map<String, dynamic>> maps = await db.query(
-      'users',
-      where: 'username = ?',
-      whereArgs: [username],
-    );
-    if (maps.isNotEmpty) {
-      return User.fromMap(maps.first);
-    }
+    final maps = await db.query('users', where: 'username = ?', whereArgs: [username]);
+    if (maps.isNotEmpty) return User.fromMap(maps.first);
     return null;
   }
 
-  Future<User?> getUserById(String id) async {
-    final db = await database;
-    final List<Map<String, dynamic>> maps = await db.query(
-      'users',
-      where: 'id = ?',
-      whereArgs: [id],
-    );
-    if (maps.isNotEmpty) {
-      return User.fromMap(maps.first);
-    }
-    return null;
-  }
-
-  // عمليات المهام
   Future<int> insertTask(Task task) async {
     final db = await database;
     return await db.insert('tasks', task.toMap());
@@ -92,41 +75,32 @@ class DatabaseHelper {
 
   Future<List<Task>> getTasksByUserId(String userId) async {
     final db = await database;
-    final List<Map<String, dynamic>> maps = await db.query(
-      'tasks',
-      where: 'userId = ?',
-      whereArgs: [userId],
-    );
-    return List.generate(maps.length, (i) {
-      return Task.fromMap(maps[i]);
-    });
+    final maps = await db.query('tasks', where: 'userId = ?', whereArgs: [userId]);
+    return List.generate(maps.length, (i) => Task.fromMap(maps[i]));
   }
 
   Future<int> updateTask(Task task) async {
     final db = await database;
-    return await db.update(
-      'tasks',
-      task.toMap(),
-      where: 'id = ?',
-      whereArgs: [task.id],
-    );
+    return await db.update('tasks', task.toMap(), where: 'id = ?', whereArgs: [task.id]);
   }
 
   Future<int> deleteTask(String id) async {
     final db = await database;
-    return await db.delete(
-      'tasks',
-      where: 'id = ?',
-      whereArgs: [id],
-    );
+    return await db.delete('tasks', where: 'id = ?', whereArgs: [id]);
   }
-
-  Future<int> deleteAllUserTasks(String userId) async {
+    Future<int> updateUserPassword(String userId, String newPasswordHash) async {
     final db = await database;
-    return await db.delete(
-      'tasks',
-      where: 'userId = ?',
+    return await db.update(
+      'users',
+      {'password': newPasswordHash},
+      where: 'id = ?',
       whereArgs: [userId],
     );
+  }
+    Future<User?> getUserById(String id) async {
+    final db = await database;
+    final maps = await db.query('users', where: 'id = ?', whereArgs: [id]);
+    if (maps.isNotEmpty) return User.fromMap(maps.first);
+    return null;
   }
 }

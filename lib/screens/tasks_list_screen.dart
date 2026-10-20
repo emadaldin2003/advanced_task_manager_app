@@ -1,28 +1,33 @@
+// screens/tasks_list_screen.dart
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../models/task.dart';
 import '../database/database.dart';
 import '../widgets/task_item.dart';
+import '../widgets/empty_state.dart';
 import 'add_edit_task_screen.dart';
-import 'login_screen.dart';
+import 'completed_tasks_screen.dart';
+import 'settings_screen.dart';
 
 class TasksListScreen extends StatefulWidget {
   final String userId;
-  
-  TasksListScreen({required this.userId});
-  
+  const TasksListScreen({super.key, required this.userId});
+
   @override
-  _TasksListScreenState createState() => _TasksListScreenState();
+  State<TasksListScreen> createState() => _TasksListScreenState();
 }
 
 class _TasksListScreenState extends State<TasksListScreen> {
   final DatabaseHelper _dbHelper = DatabaseHelper();
   List<Task> tasks = [];
   List<Task> filteredTasks = [];
+  
   String selectedCategory = 'الكل';
   String sortBy = 'الأحدث';
   String searchQuery = '';
-  List<String> categories = ['الكل', 'عام', 'عمل', 'شخصي', 'منزلي', 'مهم'];
+  bool _isSearching = false;
+  final _searchController = TextEditingController();
+  
+  final List<String> categories = ['الكل', 'عام', 'عمل', 'شخصي', 'منزلي', 'مهم'];
 
   @override
   void initState() {
@@ -30,46 +35,19 @@ class _TasksListScreenState extends State<TasksListScreen> {
     _loadTasks();
   }
 
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
   Future<void> _loadTasks() async {
     final tasksFromDb = await _dbHelper.getTasksByUserId(widget.userId);
+    if (!mounted) return;
     setState(() {
       tasks = tasksFromDb;
       _applyFilters();
     });
-  }
-
-  Future<void> _addTask(String taskTitle, String category, int priority, DateTime? dueDate, DateTime? reminder) async {
-    final newTask = Task(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      userId: widget.userId,
-      title: taskTitle,
-      category: category,
-      priority: priority,
-      dueDate: dueDate,
-      reminder: reminder,
-    );
-    
-    await _dbHelper.insertTask(newTask);
-    await _loadTasks();
-  }
-
-  Future<void> _editTask(String taskId, String newTitle, String category, int priority, DateTime? dueDate, DateTime? reminder) async {
-    final taskIndex = tasks.indexWhere((task) => task.id == taskId);
-    if (taskIndex >= 0) {
-      final updatedTask = Task(
-        id: taskId,
-        userId: widget.userId,
-        title: newTitle,
-        category: category,
-        priority: priority,
-        dueDate: dueDate,
-        reminder: reminder,
-        isCompleted: tasks[taskIndex].isCompleted,
-      );
-      
-      await _dbHelper.updateTask(updatedTask);
-      await _loadTasks();
-    }
   }
 
   Future<void> _deleteTask(String taskId) async {
@@ -78,51 +56,37 @@ class _TasksListScreenState extends State<TasksListScreen> {
   }
 
   Future<void> _toggleTaskStatus(String taskId) async {
-    final taskIndex = tasks.indexWhere((task) => task.id == taskId);
-    if (taskIndex >= 0) {
-      final updatedTask = Task(
-        id: taskId,
-        userId: widget.userId,
-        title: tasks[taskIndex].title,
-        category: tasks[taskIndex].category,
-        priority: tasks[taskIndex].priority,
-        dueDate: tasks[taskIndex].dueDate,
-        reminder: tasks[taskIndex].reminder,
-        isCompleted: !tasks[taskIndex].isCompleted,
-      );
-      
-      await _dbHelper.updateTask(updatedTask);
+    final index = tasks.indexWhere((t) => t.id == taskId);
+    if (index >= 0) {
+      final updated = tasks[index].copyWith(isCompleted: !tasks[index].isCompleted);
+      await _dbHelper.updateTask(updated);
       await _loadTasks();
     }
   }
 
   void _applyFilters() {
-    setState(() {
-      filteredTasks = tasks.where((task) {
-        final matchesCategory = selectedCategory == 'الكل' || task.category == selectedCategory;
-        final matchesSearch = searchQuery.isEmpty || 
-            task.title.toLowerCase().contains(searchQuery.toLowerCase());
-        return matchesCategory && matchesSearch;
-      }).toList();
+    filteredTasks = tasks.where((task) {
+      final matchesCategory = selectedCategory == 'الكل' || task.category == selectedCategory;
+      final matchesSearch = searchQuery.isEmpty || task.title.toLowerCase().contains(searchQuery.toLowerCase());
+      return matchesCategory && matchesSearch;
+    }).toList();
 
-      // Sorting logic
-      if (sortBy == 'الأحدث') {
-        filteredTasks.sort((a, b) => b.id.compareTo(a.id));
-      } else if (sortBy == 'الأقدم') {
-        filteredTasks.sort((a, b) => a.id.compareTo(b.id));
-      } else if (sortBy == 'الأعلى أولوية') {
-        filteredTasks.sort((a, b) => b.priority.compareTo(a.priority));
-      } else if (sortBy == 'الأدنى أولوية') {
-        filteredTasks.sort((a, b) => a.priority.compareTo(b.priority));
-      } else if (sortBy == 'الأقرب موعد') {
-        filteredTasks.sort((a, b) {
-          if (a.dueDate == null && b.dueDate == null) return 0;
-          if (a.dueDate == null) return 1;
-          if (b.dueDate == null) return -1;
-          return a.dueDate!.compareTo(b.dueDate!);
-        });
-      }
-    });
+    if (sortBy == 'الأحدث') {
+      filteredTasks.sort((a, b) => b.id.compareTo(a.id));
+    } else if (sortBy == 'الأقدم') {
+      filteredTasks.sort((a, b) => a.id.compareTo(b.id));
+    } else if (sortBy == 'الأعلى أولوية') {
+      filteredTasks.sort((a, b) => b.priority.compareTo(a.priority));
+    } else if (sortBy == 'الأدنى أولوية') {
+      filteredTasks.sort((a, b) => a.priority.compareTo(b.priority));
+    } else if (sortBy == 'الأقرب موعد') {
+      filteredTasks.sort((a, b) {
+        if (a.dueDate == null && b.dueDate == null) return 0;
+        if (a.dueDate == null) return 1;
+        if (b.dueDate == null) return -1;
+        return a.dueDate!.compareTo(b.dueDate!);
+      });
+    }
   }
 
   void _navigateToAddEditScreen({Task? task}) async {
@@ -137,118 +101,175 @@ class _TasksListScreenState extends State<TasksListScreen> {
     );
 
     if (result != null && result is Map) {
-      final String title = result['title'];
-      final String category = result['category'];
-      final int priority = result['priority'];
-      final DateTime? dueDate = result['dueDate'];
-      final DateTime? reminder = result['reminder'];
-      
       if (result['isEdit']) {
-        await _editTask(result['id'], title, category, priority, dueDate, reminder);
+        final updatedTask = tasks.firstWhere((t) => t.id == result['id']).copyWith(
+          title: result['title'],
+          category: result['category'],
+          priority: result['priority'],
+          dueDate: result['dueDate'],
+          reminder: result['reminder'],
+        );
+        await _dbHelper.updateTask(updatedTask);
       } else {
-        await _addTask(title, category, priority, dueDate, reminder);
+        final newTask = Task(
+          id: DateTime.now().millisecondsSinceEpoch.toString(),
+          userId: widget.userId,
+          title: result['title'],
+          category: result['category'],
+          priority: result['priority'],
+          dueDate: result['dueDate'],
+          reminder: result['reminder'],
+        );
+        await _dbHelper.insertTask(newTask);
       }
+      await _loadTasks();
     }
-  }
-
-  Future<void> _logout() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('userId');
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (context) => LoginScreen()),
-    );
   }
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
     return Scaffold(
+      // إضافة الـ Drawer
+      drawer: Drawer(
+        child: ListView(
+          padding: EdgeInsets.zero,
+          children: [
+            DrawerHeader(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [scheme.primary, scheme.primaryContainer],
+                  begin: Alignment.topRight,
+                  end: Alignment.bottomLeft,
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  CircleAvatar(
+                    radius: 30,
+                    backgroundColor: scheme.onPrimary,
+                    child: Icon(Icons.person, size: 40, color: scheme.primary),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'مرحباً بك',
+                    style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.list_alt),
+              title: const Text('مهامي الحالية'),
+              selected: true,
+              onTap: () => Navigator.pop(context),
+            ),
+            ListTile(
+              leading: const Icon(Icons.done_all),
+              title: const Text('المهام المكتملة'),
+              onTap: () {
+                Navigator.pop(context); // إغلاق القائمة الجانبية
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => CompletedTasksScreen(userId: widget.userId)),
+                );
+              },
+            ),
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.settings),
+              title: const Text('الإعدادات'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => SettingsScreen(userId: widget.userId)),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+      
       appBar: AppBar(
-        title: Text('مهامي اليومية'),
+        title: _isSearching 
+            ? TextField(
+                controller: _searchController,
+                autofocus: true,
+                decoration: const InputDecoration(hintText: 'بحث...', border: InputBorder.none),
+                onChanged: (v) => setState(() { searchQuery = v; _applyFilters(); }),
+              )
+            : const Text('مهامي'),
         actions: [
           IconButton(
-            icon: Icon(Icons.search),
+            icon: Icon(_isSearching ? Icons.close : Icons.search),
             onPressed: () {
-              showSearch(
-                context: context,
-                delegate: TaskSearchDelegate(tasks, _applyFilters),
-              ).then((value) {
-                setState(() {
-                  searchQuery = value ?? '';
+              setState(() {
+                _isSearching = !_isSearching;
+                if (!_isSearching) {
+                  searchQuery = '';
+                  _searchController.clear();
                   _applyFilters();
-                });
+                }
               });
             },
-          ),
-          IconButton(
-            icon: Icon(Icons.logout),
-            onPressed: _logout,
           ),
         ],
       ),
       body: Column(
         children: [
+          // لوحة التحكم العلوية
           Padding(
-            padding: const EdgeInsets.all(8.0),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+            child: Row(
+              children: [
+                Expanded(child: _buildDashboardCard('الإجمالي', tasks.length.toString(), scheme.primary, scheme)),
+                const SizedBox(width: 8),
+                Expanded(child: _buildDashboardCard('مكتملة', tasks.where((t) => t.isCompleted).length.toString(), Colors.green, scheme)),
+                const SizedBox(width: 8),
+                Expanded(child: _buildDashboardCard('قيد التنفيذ', tasks.where((t) => !t.isCompleted).length.toString(), Colors.orange, scheme)),
+              ],
+            ),
+          ),
+          
+          // فلاتر
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(
               children: [
                 Expanded(
                   child: DropdownButtonFormField<String>(
-                    value: selectedCategory,
-                    items: categories.map((String category) {
-                      return DropdownMenuItem<String>(
-                        value: category,
-                        child: Text(category),
-                      );
-                    }).toList(),
-                    onChanged: (String? newValue) {
-                      setState(() {
-                        selectedCategory = newValue!;
-                        _applyFilters();
-                      });
-                    },
-                    decoration: InputDecoration(
-                      labelText: 'التصنيف',
-                      border: OutlineInputBorder(),
-                    ),
+                    initialValue: selectedCategory,
+                    isExpanded: true,
+                    items: categories.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
+                    onChanged: (v) => setState(() { selectedCategory = v!; _applyFilters(); }),
+                    decoration: const InputDecoration(labelText: 'التصنيف', contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8)),
                   ),
                 ),
-                SizedBox(width: 10),
+                const SizedBox(width: 8),
                 Expanded(
                   child: DropdownButtonFormField<String>(
-                    value: sortBy,
-                    items: ['الأحدث', 'الأقدم', 'الأعلى أولوية', 'الأدنى أولوية', 'الأقرب موعد']
-                        .map((String sort) {
-                      return DropdownMenuItem<String>(
-                        value: sort,
-                        child: Text(sort),
-                      );
-                    }).toList(),
-                    onChanged: (String? newValue) {
-                      setState(() {
-                        sortBy = newValue!;
-                        _applyFilters();
-                      });
-                    },
-                    decoration: InputDecoration(
-                      labelText: 'ترتيب حسب',
-                      border: OutlineInputBorder(),
-                    ),
+                    initialValue: sortBy,
+                    isExpanded: true,
+                    items: ['الأحدث', 'الأقدم', 'الأعلى أولوية', 'الأدنى أولوية', 'الأقرب موعد'].map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
+                    onChanged: (v) => setState(() { sortBy = v!; _applyFilters(); }),
+                    decoration: const InputDecoration(labelText: 'ترتيب', contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8)),
                   ),
                 ),
               ],
             ),
           ),
+          const SizedBox(height: 8),
+          
+          // القائمة
           Expanded(
             child: filteredTasks.isEmpty
-                ? Center(
-                    child: Text(
-                      'لا توجد مهام حالياً\nاضغط على + لإضافة مهمة جديدة',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 18, color: Colors.grey),
-                    ),
-                  )
+                ? const EmptyState(icon: Icons.task_outlined, title: 'لا توجد مهام', subtitle: 'اضغط + لإضافة مهمة جديدة')
                 : ListView.builder(
+                    padding: const EdgeInsets.only(bottom: 80),
                     itemCount: filteredTasks.length,
                     itemBuilder: (context, index) {
                       final task = filteredTasks[index];
@@ -263,64 +284,28 @@ class _TasksListScreenState extends State<TasksListScreen> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
+      floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _navigateToAddEditScreen(),
-        child: Icon(Icons.add),
+        icon: const Icon(Icons.add),
+        label: const Text('مهمة'),
       ),
     );
   }
-}
 
-class TaskSearchDelegate extends SearchDelegate<String> {
-  final List<Task> tasks;
-  final Function applyFilters;
-
-  TaskSearchDelegate(this.tasks, this.applyFilters);
-
-  @override
-  List<Widget> buildActions(BuildContext context) {
-    return [
-      IconButton(
-        icon: Icon(Icons.clear),
-        onPressed: () {
-          query = '';
-        },
+  Widget _buildDashboardCard(String label, String count, Color color, ColorScheme scheme) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(16),
       ),
-    ];
-  }
-
-  @override
-  Widget buildLeading(BuildContext context) {
-    return IconButton(
-      icon: Icon(Icons.arrow_back),
-      onPressed: () {
-        close(context, '');
-      },
-    );
-  }
-
-  @override
-  Widget buildResults(BuildContext context) {
-    return Container();
-  }
-
-  @override
-  Widget buildSuggestions(BuildContext context) {
-    final suggestionList = query.isEmpty
-        ? tasks
-        : tasks.where((task) => task.title.toLowerCase().contains(query.toLowerCase())).toList();
-
-    return ListView.builder(
-      itemCount: suggestionList.length,
-      itemBuilder: (context, index) {
-        final task = suggestionList[index];
-        return ListTile(
-          title: Text(task.title),
-          onTap: () {
-            close(context, task.title);
-          },
-        );
-      },
+      child: Column(
+        children: [
+          Text(count, style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: color)),
+          const SizedBox(height: 4),
+          Text(label, style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
+        ],
+      ),
     );
   }
 }

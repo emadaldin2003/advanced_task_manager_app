@@ -1,10 +1,11 @@
+// models/task.dart
 class Task {
   String id;
   String userId;
   String title;
   bool isCompleted;
   String category;
-  int priority; // 1-5 where 5 is highest
+  int priority;
   DateTime? dueDate;
   DateTime? reminder;
 
@@ -18,6 +19,26 @@ class Task {
     this.dueDate,
     this.reminder,
   });
+
+  Task copyWith({
+    String? title,
+    bool? isCompleted,
+    String? category,
+    int? priority,
+    DateTime? dueDate,
+    DateTime? reminder,
+  }) {
+    return Task(
+      id: id,
+      userId: userId,
+      title: title ?? this.title,
+      isCompleted: isCompleted ?? this.isCompleted,
+      category: category ?? this.category,
+      priority: priority ?? this.priority,
+      dueDate: dueDate ?? this.dueDate,
+      reminder: reminder ?? this.reminder,
+    );
+  }
 
   Map<String, dynamic> toMap() {
     return {
